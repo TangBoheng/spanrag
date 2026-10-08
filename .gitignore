@@ -1,0 +1,30 @@
+# 数据与运行时产物
+data/
+*.db
+*.log
+
+# 配置文件（含 API 密钥，请从模板复制）
+config/settings.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# 系统文件
+.DS_Store
+Thumbs.db

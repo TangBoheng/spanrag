@@ -1,0 +1,43 @@
+# 项目依赖包列表
+
+# PDF处理
+PyMuPDF>=1.23.0
+pdfplumber>=0.9.0
+
+# OCR处理
+paddleocr>=2.6.0
+paddlepaddle>=2.4.0
+pytesseract>=0.3.10
+easyocr>=1.7.0
+
+# 图像处理
+Pillow>=9.0.0
+opencv-python>=4.8.0
+
+# 向量数据库
+pymilvus>=2.3.0
+
+# 机器学习
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Web请求
+requests>=2.31.0
+openai>=1.0.0
+
+# 数据处理
+pandas>=2.0.0
+
+# 日志和配置
+python-dotenv>=1.0.0
+
+# 测试
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# 开发工具
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+

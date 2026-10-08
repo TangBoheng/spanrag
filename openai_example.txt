@@ -1,0 +1,61 @@
+embedding:
+
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.getenv("DASHSCOPE_API_KEY"),  # 如果您没有配置环境变量，请在此处用您的API Key进行替换
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"  # 百炼服务的base_url
+)
+
+completion = client.embeddings.create(
+    model="text-embedding-v4",
+    input='衣服的质量杠杠的，很漂亮，不枉我等了这么久啊，喜欢，以后还来这里买',
+    dimensions=1024, # 指定向量维度（仅 text-embedding-v3及 text-embedding-v4支持该参数）
+    encoding_format="float"
+)
+
+print(completion.model_dump_json())
+
+文本输入，单抡对话
+import os
+from openai import OpenAI
+
+
+client = OpenAI(
+    # 若没有配置环境变量，请用百炼API Key将下行替换为：api_key="sk-xxx",
+    api_key=os.getenv("DASHSCOPE_API_KEY"),
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+)
+
+completion = client.chat.completions.create(
+    # 模型列表：https://help.aliyun.com/zh/model-studio/getting-started/models
+    model="qwen-plus",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "你是谁？"},
+    ],
+    # Qwen3模型通过enable_thinking参数控制思考过程（开源版默认True，商业版默认False）
+    # 使用Qwen3开源版模型时，若未启用流式输出，请将下行取消注释，否则会报错
+    # extra_body={"enable_thinking": False},
+)
+print(completion.model_dump_json())
+
+图像输入
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    # 若没有配置环境变量，请用百炼API Key将下行替换为：api_key="sk-xxx",
+    api_key=os.getenv("DASHSCOPE_API_KEY"),
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+)
+completion = client.chat.completions.create(
+    model="qwen-vl-plus",  # 此处以qwen-vl-plus为例，可按需更换模型名称。模型列表：https://help.aliyun.com/zh/model-studio/getting-started/models
+    messages=[{"role": "user","content": [
+            {"type": "image_url",
+             "image_url": {"url": "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"}},
+            {"type": "text", "text": "这是什么"},
+            ]}]
+    )
+print(completion.model_dump_json())

@@ -1,0 +1,1057 @@
+
+需求如下：
+
+# 智能 Agentic RAG 框架 - 完整需求规范
+
+## 1. 核心目标
+构建一个智能 Agentic RAG 框架，用于：
+- 处理 PDF 格式电子书（大部分扫描版，需 OCR；少部分可直接提取文字）
+- 自动合并跨页段落
+- 使用 OpenAI 风格 API 接入模型
+- 摘要索引 + 内容链接机制
+- 支持多步迭代推理直到形成答案
+
+## 2. 数据处理流程
+
+### 2.1 PDF 解析与 OCR（增强版）
+**扫描版 PDF：**
+- **多OCR引擎支持**：PaddleOCR（中文优化）、Tesseract（多语言支持）、EasyOCR（备选）
+- **OCR质量评估**：引入置信度评分机制，低置信度文本标记为待人工审核
+- **图像预处理**：自动进行图像增强、去噪、二值化处理提升OCR准确率
+- **多模态备用方案**：当传统OCR失败时，使用 GPT-4V、Qwen-VL 作为备用方案
+
+**可直接提取文字的 PDF：**
+- 主引擎：PyMuPDF（性能优先）
+- 备用引擎：pdfplumber（表格处理优化）
+- 编码处理：自动检测和处理特殊字符编码
+
+**图像/表格提取增强：**
+- 从 PDF 页面中提取图像，支持多种格式（PNG, JPEG, WebP）
+- 识别并提取表格结构，结合规则匹配和深度学习模型
+- 质量检查：提取后内容完整性验证
+
+### 2.2 段落合并机制（算法细化）
+**跨页段落检测：**
+- 分析页面间文本的连续性（字体、大小、行距、位置）
+- 检测段落是否被页面分割
+
+```python
+# 连续性检测权重分配
+CONTINUITY_FACTORS = {
+    "font_similarity": 0.3,      # 字体相似度
+    "line_spacing": 0.2,         # 行距一致性  
+    "text_alignment": 0.2,       # 文本对齐方式
+    "semantic_continuity": 0.3   # 语义连续性（使用轻量模型）
+}
+
+# 合并置信度阈值
+MERGE_CONFIDENCE_THRESHOLD = 0.7  # 低于此值需要人工审核
+```
+
+**自动合并策略：**
+- 高置信度（>0.85）：自动合并跨页段落
+- 中等置信度（0.7-0.85）：提供合并建议
+- 低置信度（<0.7）：标记待人工处理
+- 保留原始页面信息作为元数据
+
+### 2.3 内容截取与存储（增强版）
+**文本截取优化：**
+- 动态分块策略：根据语义边界而非固定长度分块
+- 智能重叠控制：避免信息丢失的重叠机制
+- 内容去重：基于内容哈希的重复内容检测
+
+**图像截取：**
+- 从 PDF 页面中提取的图像
+- 保存为独立文件，生成内容链接
+- 支持压缩和格式转换优化
+
+**表格截取：**
+- 提取的表格数据
+- 转换为结构化格式（JSON/CSV）保存，生成内容链接
+- 同时保存可视化格式用于显示
+
+### 2.4 摘要生成（成本优化）
+**文本摘要：**
+- 调用 OpenAI 风格 API（如 GPT、Qwen）生成文本摘要
+- 分层摘要策略：关键内容详细摘要，次要内容简洁摘要
+- 缓存机制：相同内容避免重复生成摘要
+- 附带原文内容链接
+
+**多模态摘要：**
+- 调用多模态 API（如 GPT-4V、Qwen-VL）生成图像/表格描述
+- 本地模型优先：降低API调用成本
+- 批量处理优化：多个内容批量生成描述
+- 附带对应内容链接
+
+## 3. 知识库存储设计增强
+
+### 3.1 内容存储系统（健壮性提升）
+**文本内容：**完整段落存储在数据库（PostgreSQL/MongoDB）
+**图像内容：**图像文件存储在文件系统（支持本地和云存储）
+**表格内容：**结构化数据存储 + 可视化格式
+**内容链接：**唯一标识符用于快速查找，支持永久链接
+
+**存储优化：**
+- 元数据管理：丰富的处理历史和质量记录
+- 版本控制：内容更新时的版本管理
+- 备份机制：定期备份和恢复测试
+
+### 3.2 向量化索引（Milvus性能优化）
+**索引内容：**摘要向量 + 内容链接
+**元数据：**包含指向完整内容的链接
+
+**Milvus配置优化：**
+- 集合分区：按内容类型分区提高查询效率
+- 索引选择：根据查询模式选择合适索引类型
+- 资源管理：连接池和批量插入优化
+
+## 4. 查询与迭代推理流程（可靠性提升）
+
+### 4.1 初始查询处理
+- 用户提问 → 向量化 → Milvus 检索相似摘要
+- 返回：相关摘要 + 内容链接
+- 查询预处理：拼写检查、查询扩展、意图识别
+
+### 4.2 内容获取（容错机制）
+- 通过内容链接获取完整原文/图像/表格
+- 准备：摘要 + 完整内容
+- 重试机制：获取失败时的自动重试
+- 降级策略：主要内容不可用时的备用方案
+
+### 4.3 多模态推理（成本控制）
+- 将摘要和完整内容送入多模态模型
+- 判断推理结果：
+  - 如果能直接回答 → 返回最终答案
+  - 如果只能生成中间问题 → 进入下一步
+- 模型选择策略：根据内容复杂度选择合适模型
+
+### 4.4 迭代推理机制（智能终止）
+**中间问题生成：**
+- 模型识别需要进一步信息才能回答
+- 生成具体的子问题
+- 子问题质量检查：相关性、可回答性、避免循环
+
+**新查询检索：**
+- 基于中间问题重新检索
+- 获取新的相关摘要和内容
+
+**重复过程：**
+- 继续推理 → 生成新问题 → 重新检索
+- 直到能够形成完整答案
+
+### 4.5 迭代终止条件（量化标准）
+```python
+TERMINATION_CONDITIONS = {
+    "answer_completeness": 0.8,    # 答案完整性评分
+    "confidence_threshold": 0.7,   # 置信度阈值
+    "max_iterations": 5,           # 最大迭代次数
+    "information_gain": 0.1,       # 信息增益阈值
+    "query_specificity": 0.6       # 问题特异性
+}
+```
+
+- 模型判断已获得足够信息
+- 无法生成更有意义的子问题
+- 达到最大迭代次数（防止无限循环）
+
+## 5. OpenAI API 集成增强
+
+### 5.1 API 调用配置
+- 文本处理：调用 chat/completions 接口
+- 多模态处理：调用 vision 接口（如 gpt-4-vision）
+- 向量化：调用 embeddings 接口
+
+### 5.2 API 参数化优化
+- 模型名称、温度、最大长度等参数可配置
+- 支持不同服务商的 OpenAI 兼容接口
+- API密钥管理：安全存储和轮换机制
+
+## 6. 架构组件（增强版）
+
+[PDF输入] → [OCR解析器] → [段落合并器] → [内容截取器] → [内容存储]
+↓
+[OpenAI API摘要器] → [摘要+链接生成] → [Milvus索引]
+↓
+[查询处理器] → [摘要检索] → [内容获取] → [多步迭代推理] → [最终答案]
+
+**系统增强特性：**
+- 插件架构：支持OCR引擎、模型接口等的插件式扩展
+- 配置驱动：所有参数通过配置文件管理
+- 并行处理：支持多文件并行处理
+- 监控告警：健康检查、性能监控、资源告警
+
+## 7. 迭代推理流程示例
+
+用户问题: "这本书中关于机器学习的章节是如何介绍神经网络的？"
+
+Step 1: 检索 → 从混合知识库中找到最相关的"机器学习神经网络"内容块
+Step 2: 推理 → "找到了多个相关内容块，需要综合这些信息"
+Step 3: 子问题 → "神经网络的不同实现方法有哪些？"
+Step 4: 重新检索 → 找到更多关于神经网络实现的相关内容
+Step 5: 推理 → "综合所有相关信息，可以完整回答问题"
+Step 6: 最终答案 → 生成综合多来源的神经网络详细介绍，并注明参考书籍
+
+## 8. 技术栈确认（增强版）
+
+PDF处理：PyMuPDF、PaddleOCR、Tesseract、EasyOCR
+OpenAI API：兼容 OpenAI 格式的模型接口（多供应商支持）
+向量存储：Milvus（优化配置）
+内容存储：数据库 + 文件系统（云存储兼容）
+Agent框架：支持迭代推理的框架
+
+**错误处理与监控：**
+- 异常捕获：所有关键操作的异常处理
+- 日志记录：详细的操作日志用于调试
+
+
+项目结构：
+myrag
+├── config/
+│   ├── __init__.py
+│   ├── settings.py
+│   │   """
+│   │   项目全局配置管理模块
+│   │   通过单例模式提供配置访问，支持环境变量覆盖
+│   │   """
+│   │   
+│   │   class Settings:
+│   │       """
+│   │       项目配置类，管理所有运行时参数
+│   │       
+│   │       Attributes:
+│   │           API_KEYS (Dict[str, str]): 所有API密钥
+│   │           MILVUS_CONFIG (Dict[str, Any]): Milvus数据库配置
+│   │           MODEL_CONFIG (Dict[str, Any]): 模型配置
+│   │           PROCESSING_CONFIG (Dict[str, Any]): 数据处理配置
+│   │           OCR_CONFIG (Dict[str, Any]): OCR配置
+│   │           ITERATION_CONFIG (Dict[str, Any]): 迭代推理配置
+│   │       """
+│   │       
+│   │       def __init__(self, config_file: str = "config/settings.json"):
+│   │           """
+│   │           初始化配置，加载配置文件并验证
+│   │           
+│   │           Args:
+│   │               config_file (str): 配置文件路径
+│   │           """
+│   │       
+│   │       def validate(self) -> bool:
+│   │           """
+│   │           验证配置完整性
+│   │           
+│   │           Returns:
+│   │               bool: 配置是否有效
+│   │           """
+│   │       
+│   │       def get_ocr_engines(self) -> List[str]:
+│   │           """
+│   │           获取OCR引擎优先级列表
+│   │           
+│   │           Returns:
+│   │               List[str]: 优先级排序的OCR引擎列表
+│   │           """
+│   │       
+│   │       def get_continuity_factors(self) -> Dict[str, float]:
+│   │           """
+│   │           获取段落连续性检测权重
+│   │           
+│   │           Returns:
+│   │               Dict[str, float]: 权重字典
+│   │           """
+│   │       
+│   │       def get_merge_threshold(self) -> float:
+│   │           """
+│   │           获取段落合并置信度阈值
+│   │           
+│   │           Returns:
+│   │               float: 置信度阈值
+│   │           """
+│   │       
+│   │       def get_iteration_conditions(self) -> Dict[str, float]:
+│   │           """
+│   │           获取迭代终止条件
+│   │           
+│   │           Returns:
+│   │               Dict[str, float]: 终止条件字典
+│   │           """
+│   │   
+│   ├── api_config.py
+│   │   """
+│   │   API配置管理模块
+│   │   管理多供应商API密钥和参数，支持密钥轮换和负载均衡
+│   │   """
+│   │   
+│   │   class APIConfig:
+│   │       """
+│   │       API配置类，管理AI服务提供商配置
+│   │       
+│   │       Attributes:
+│   │           providers (List[str]): 支持的API提供商列表
+│   │           rate_limits (Dict[str, int]): 各提供商的速率限制
+│   │           fallback_chain (List[str]): 供应商降级链
+│   │       """
+│   │       
+│   │       def __init__(self, api_keys_file: str = "config/api_keys.json"):
+│   │           """
+│   │           初始化API配置
+│   │           
+│   │           Args:
+│   │               api_keys_file (str): API密钥文件路径
+│   │           """
+│   │       
+│   │       def get_api_params(self, model_type: str, provider: str = None) -> Dict[str, Any]:
+│   │           """
+│   │           获取指定模型类型的API参数
+│   │           
+│   │           Args:
+│   │               model_type (str): 模型类型 ('text', 'vision', 'embedding')
+│   │               provider (str, optional): 指定API供应商
+│   │           
+│   │           Returns:
+│   │               Dict[str, Any]: API参数字典
+│   │                   {
+│   │                       "api_key": str,
+│   │                       "base_url": str,
+│   │                       "model_name": str,
+│   │                       "temperature": float,
+│   │                       "max_tokens": int,
+│   │                       "timeout": int,
+│   │                       "retry_attempts": int
+│   │                   }
+│   │           """
+│   │       
+│   │       def rotate_key(self, provider: str) -> bool:
+│   │           """
+│   │           轮换指定供应商的API密钥
+│   │           
+│   │           Args:
+│   │               provider (str): API供应商
+│   │           
+│   │           Returns:
+│   │               bool: 轮换是否成功
+│   │           """
+│   │   
+│   └── milvus_config.py
+│       """
+│       Milvus数据库配置模块
+│       管理向量数据库连接和集合配置，支持分区和索引优化
+│       """
+│       
+│       class MilvusConfig:
+│           """
+│           Milvus配置类
+│           """
+│           
+│           def __init__(self):
+│               """
+│               初始化Milvus配置
+│               """
+│           
+│           def get_connection_params(self) -> Dict[str, Any]:
+│           """
+│           获取Milvus连接参数
+│           
+│           Returns:
+│               Dict[str, Any]: 连接参数
+│                   {
+│                       "host": str,
+│                       "port": int,
+│                       "user": str,
+│                       "password": str,
+│                       "secure": bool,
+│                       "pool_size": int
+│                   }
+│           """
+│           
+│           def get_collection_config(self) -> Dict[str, Any]:
+│           """
+│           获取集合配置
+│           
+│           Returns:
+│               Dict[str, Any]: 集合配置
+│                   {
+│                       "collection_name": str,
+│                       "dimension": int,
+│                       "metric_type": str,
+│                       "index_type": str,
+│                       "params": dict,
+│                       "partition_by_type": bool
+│                   }
+│           """
+│           
+│           def get_index_config(self) -> Dict[str, Any]:
+│           """
+│           获取索引配置
+│           
+│           Returns:
+│               Dict[str, Any]: 索引配置
+│                   {
+│                       "index_type": str,
+│                       "metric_type": str,
+│                       "params": dict
+│                   }
+│           """
+│
+├── src/
+│   ├── __init__.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── document_parser.py
+│   │   │   """
+│   │   │   PDF文档解析模块
+│   │   │   支持多OCR引擎、图像预处理和内容质量评估
+│   │   │   """
+│   │   │   
+│   │   │   def parse_pdf(file_path: str, ocr_engines: List[str] = None) -> Dict[str, List[Dict]]:
+│   │   │       """
+│   │   │       解析PDF文件，提取文本、图像和表格内容
+│   │   │       
+│   │   │       Args:
+│   │   │           file_path (str): PDF文件路径
+│   │   │           ocr_engines (List[str], optional): OCR引擎优先级列表
+│   │   │       
+│   │   │       Returns:
+│   │   │           Dict[str, List[Dict]]: 解析结果
+│   │   │               {
+│   │   │                   "text": [
+│   │   │                       {
+│   │   │                           "page": int,
+│   │   │                           "content": str,
+│   │   │                           "bbox": Tuple[int, int, int, int],
+│   │   │                           "font_info": dict,
+│   │   │                           "confidence": float,
+│   │   │                           "engine_used": str,
+│   │   │                           "quality_score": float
+│   │   │                       }
+│   │   │                   ],
+│   │   │                   "images": [
+│   │   │                       {
+│   │   │                           "page": int,
+│   │   │                           "image_path": str,
+│   │   │                           "bbox": Tuple[int, int, int, int],
+│   │   │                           "width": int,
+│   │   │                           "height": int,
+│   │   │                           "format": str,
+│   │   │                           "quality": str
+│   │   │                       }
+│   │   │                   ],
+│   │   │                   "tables": [
+│   │   │                       {
+│   │   │                           "page": int,
+│   │   │                           "table_data": List[List[str]],
+│   │   │                           "bbox": Tuple[int, int, int, int],
+│   │   │                           "headers": List[str],
+│   │   │                           "confidence": float
+│   │   │                       }
+│   │   │                   ],
+│   │   │                   "metadata": {
+│   │   │                       "file_path": str,
+│   │   │                       "total_pages": int,
+│   │   │                       "processing_time": float,
+│   │   │                       "engines_used": List[str],
+│   │   │                       "source_book": str,           # 来源书籍文件名
+│   │   │                       "extraction_date": str,        # 提取时间戳
+│   │   │                       "quality_scores": Dict[str, float]  # 各页面质量评分统计
+│   │   │                   }
+│   │   │               }
+│   │   │       
+│   │   │       Raises:
+│   │   │           FileNotFoundError: PDF文件不存在
+│   │   │           ValueError: PDF格式无效
+│   │   │           RuntimeError: OCR处理失败
+│   │   │       """
+│   │   │   
+│   │   │   def extract_text_with_ocr(page_image: PIL.Image, ocr_engines: List[str] = None) -> Dict[str, Any]:
+│   │   │       """
+│   │   │       对PDF页面进行OCR提取，支持多引擎备降
+│   │   │       
+│   │   │       Args:
+│   │   │           page_image (PIL.Image): 页面图像
+│   │   │           ocr_engines (List[str], optional): OCR引擎优先级列表
+│   │   │       
+│   │   │       Returns:
+│   │   │           Dict[str, Any]: OCR结果
+│   │   │               {
+│   │   │                   "text": str,
+│   │   │                   "confidence": float,
+│   │   │                   "engine_used": str,
+│   │   │                   "processing_time": float,
+│   │   │                   "word_boxes": List[dict]
+│   │   │               }
+│   │   │       """
+│   │   │   
+│   │   │   def preprocess_image_for_ocr(image: PIL.Image) -> PIL.Image:
+│   │   │       """
+│   │   │       预处理图像提升OCR准确率
+│   │   │       
+│   │   │       Args:
+│   │   │           image (PIL.Image): 原始图像
+│   │   │       
+│   │   │       Returns:
+│   │   │           PIL.Image: 预处理后的图像
+│   │   │       """
+│   │   │   
+│   │   ├── content_extractor.py
+│   │   │   """
+│   │   │   内容截取与存储模块
+│   │   │   实现动态分块、内容去重和质量评估
+│   │   │   """
+│   │   │   
+│   │   │   def extract_text_chunks(text_data: List[Dict], chunk_size: int = 1000, overlap: int = 100) -> List[Dict]:
+│   │   │       """
+│   │   │       按语义边界智能切分文本
+│   │   │       
+│   │   │       Args:
+│   │   │           text_data (List[Dict]): 文本数据列表
+│   │   │           chunk_size (int): 块大小
+│   │   │           overlap (int): 重叠大小
+│   │   │       
+│   │   │       Returns:
+│   │   │           List[Dict]: 切分后的文本块
+│   │   │               [
+│   │   │                   {
+│   │   │                       "content": str,
+│   │   │                       "metadata": {
+│   │   │                           "page": int,
+│   │   │                           "bbox": Tuple[int, int, int, int],
+│   │   │                           "chunk_id": str,
+│   │   │                           "source_file": str,
+│   │   │                           "start_pos": int,
+│   │   │                           "end_pos": int,
+│   │   │                           "semantic_boundary": bool,
+│   │   │                           "quality_score": float,
+│   │   │                           "hash": str,
+│   │   │                           "source_book": str,           # 来源书籍
+│   │   │                           "source_page": int,           # 原始页码
+│   │   │                           "ocr_confidence": float,      # OCR置信度
+│   │   │                           "engine_used": str,           # 使用的OCR引擎
+│   │   │                           "extraction_date": str        # 提取时间
+│   │   │                       }
+│   │   │                   }
+│   │   │               ]
+│   │   │       """
+│   │   │   
+│   │   │   def save_content(content_type: str, content: Any, file_id: str, quality_score: float = 1.0) -> str:
+│   │   │       """
+│   │   │       保存内容并生成永久链接
+│   │   │       
+│   │   │       Args:
+│   │   │           content_type (str): 内容类型 ('text', 'image', 'table')
+│   │   │           content (Any): 内容数据
+│   │   │           file_id (str): 文件ID
+│   │   │           quality_score (float): 质量评分
+│   │   │       
+│   │   │       Returns:
+│   │   │           str: 内容链接 (e.g., "text://file123_chunk456")
+│   │   │       """
+│   │   │   
+│   │   │   def remove_duplicates(chunks: List[Dict], similarity_threshold: float = 0.9) -> List[Dict]:
+│   │   │       """
+│   │   │       基于内容哈希和语义相似度去重
+│   │   │       
+│   │   │       Args:
+│   │   │           chunks (List[Dict]): 文本块列表
+│   │   │           similarity_threshold (float): 相似度阈值
+│   │   │       
+│   │   │       Returns:
+│   │   │           List[Dict]: 去重后的文本块
+│   │   │       """
+│   │   │   
+│   │   ├── paragraph_merger.py
+│   │   │   """
+│   │   │   段落合并模块
+│   │   │   实现跨页段落检测和智能合并
+│   │   │   """
+│   │   │   
+│   │   │   def detect_continuity(text_chunks: List[Dict]) -> List[Dict]:
+│   │   │       """
+│   │   │       检测文本块之间的连续性
+│   │   │       
+│   │   │       Args:
+│   │   │           text_chunks (List[Dict]): 文本块列表
+│   │   │       
+│   │   │       Returns:
+│   │   │           List[Dict]: 连续性检测结果
+│   │   │               [
+│   │   │                   {
+│   │   │                       "chunk_id": str,
+│   │   │                       "is_continued": bool,
+│   │   │                       "continuity_score": float,
+│   │   │                       "factors": Dict[str, float]
+│   │   │                   }
+│   │   │               ]
+│   │   │       """
+│   │   │   
+│   │   │   def merge_paragraphs(text_chunks: List[Dict], threshold: float = 0.7) -> List[Dict]:
+│   │   │       """
+│   │   │       合并具有高连续性的段落
+│   │   │       
+│   │   │       Args:
+│   │   │           text_chunks (List[Dict]): 文本块列表
+│   │   │           threshold (float): 合并置信度阈值
+│   │   │       
+│   │   │       Returns:
+│   │   │           List[Dict]: 合并后的文本块
+│   │   │       """
+│   │   │   
+│   │   ├── summarizer.py
+│   │   │   """
+│   │   │   摘要生成模块
+│   │   │   支持文本和多模态摘要，带缓存和成本优化
+│   │   │   """
+│   │   │   
+│   │   │   def generate_text_summary(content: str, content_id: str, model_type: str = "text") -> Dict[str, Any]:
+│   │   │       """
+│   │   │       生成文本摘要
+│   │   │       
+│   │   │       Args:
+│   │   │           content (str): 原始内容
+│   │   │           content_id (str): 内容ID
+│   │   │           model_type (str): 模型类型 ('text', 'vision')
+│   │   │       
+│   │   │       Returns:
+│   │   │           Dict[str, Any]: 摘要结果
+│   │   │               {
+│   │   │                   "summary": str,
+│   │   │                   "content_id": str,
+│   │   │                   "content_link": str,
+│   │   │                   "model_used": str,
+│   │   │                   "processing_time": float,
+│   │   │                   "cache_hit": bool
+│   │   │               }
+│   │   │       """
+│   │   │   
+│   │   │   def generate_multimodal_summary(content_type: str, content: Any, content_id: str) -> Dict[str, Any]:
+│   │   │       """
+│   │   │       生成多模态摘要（图像/表格）
+│   │   │       
+│   │   │       Args:
+│   │   │           content_type (str): 内容类型 ('image', 'table')
+│   │   │           content (Any): 内容数据
+│   │   │           content_id (str): 内容ID
+│   │   │       
+│   │   │       Returns:
+│   │   │           Dict[str, Any]: 摘要结果
+│   │   │       """
+│   │   │   
+│   │   ├── vectorizer.py
+│   │   │   """
+│   │   │   向量化模块
+│   │   │   生成摘要向量并存储到Milvus
+│   │   │   """
+│   │   │   
+│   │   │   def create_vector_index(summaries: List[Dict], content_links: List[str]) -> List[Dict]:
+│   │   │       """
+│   │   │       创建向量索引
+│   │   │       
+│   │   │       Args:
+│   │   │           summaries (List[Dict]): 摘要列表
+│   │   │           content_links (List[str]): 内容链接列表
+│   │   │       
+│   │   │       Returns:
+│   │   │           List[Dict]: 向量索引数据
+│   │   │       """
+│   │   │   
+│   │   ├── indexer.py
+│   │   │   """
+│   │   │   索引生成模块
+│   │   │   管理Milvus集合和索引
+│   │   │   """
+│   │   │   
+│   │   │   def initialize_index(collection_name: str = None) -> None:
+│   │   │       """
+│   │   │       初始化Milvus索引集合
+│   │   │       
+│   │   │       Args:
+│   │   │           collection_name (str, optional): 集合名称
+│   │   │       """
+│   │   │   
+│   │   │   def add_to_index(vectors: List[List[float]], metadata: List[Dict]) -> None:
+│   │   │       """
+│   │   │       向索引添加向量
+│   │   │       
+│   │   │       Args:
+│   │   │           vectors (List[List[float]]): 向量列表
+│   │   │           metadata (List[Dict]): 元数据列表
+│   │   │       """
+│   │   │   
+│   │   │   def search_index(query_vector: List[float], top_k: int = 5) -> List[Dict]:
+│   │   │       """
+│   │   │       执行向量搜索
+│   │   │       
+│   │   │       Args:
+│   │   │           query_vector (List[float]): 查询向量
+│   │   │           top_k (int): 返回结果数量
+│   │   │       
+│   │   │       Returns:
+│   │   │           List[Dict]: 搜索结果
+│   │   │       """
+│   │   │   
+│   │   └── __init__.py
+│   │   
+│   ├── storage/
+│   │   ├── __init__.py
+│   │   ├── content_storage.py
+│   │   │   """
+│   │   │   内容存储系统
+│   │   │   管理文本、图像、表格内容的存储
+│   │   │   """
+│   │   │   
+│   │   │   # 元数据模式定义
+│   │   │   CONTENT_METADATA_SCHEMA = {
+│   │   │       "source_book": str,           # 来源书籍文件名
+│   │   │       "source_page": int,           # 原始页码
+│   │   │       "book_author": str,           # 作者信息
+│   │   │       "publish_year": int,          # 出版年份
+│   │   │       "quality_score": float,       # 内容质量评分 (0-1)
+│   │   │       "processing_time": float,     # 处理耗时(秒)
+│   │   │       "ocr_confidence": float,      # OCR置信度 (0-1)
+│   │   │       "content_hash": str,          # 内容哈希值 (SHA256)
+│   │   │       "chunk_id": str,              # 内容块ID
+│   │   │       "content_type": str,          # 内容类型 (text/image/table)
+│   │   │       "engine_used": str,           # 使用的OCR/处理引擎
+│   │   │       "file_path": str,             # 原始文件路径
+│   │   │       "extraction_date": str,       # 提取时间戳
+│   │   │       "version": int                # 元数据版本
+│   │   │   }
+│   │   │   
+│   │   │   def save_text_content(content: str, metadata: Dict) -> str:
+│   │   │       """
+│   │   │       保存文本内容到数据库
+│   │   │       
+│   │   │       Args:
+│   │   │           content (str): 文本内容
+│   │   │           metadata (Dict): 元数据字典，应包含：
+│   │   │               - source_book: 来源书籍文件名
+│   │   │               - source_page: 原始页码
+│   │   │               - quality_score: 质量评分 (0-1)
+│   │   │               - content_hash: 内容哈希值
+│   │   │               - ocr_confidence: OCR置信度
+│   │   │               - engine_used: 使用的引擎
+│   │   │               - 其他CONTENT_METADATA_SCHEMA中的推荐字段
+│   │   │       
+│   │   │       Returns:
+│   │   │           str: 内容ID
+│   │   │       
+│   │   │       Raises:
+│   │   │           ValueError: 元数据缺少必需字段
+│   │   │           StorageError: 存储操作失败
+│   │   │       """
+│   │   │   
+│   │   │   def save_image_content(image: PIL.Image, metadata: Dict) -> str:
+│   │   │       """
+│   │   │       保存图像内容到文件系统
+│   │   │       
+│   │   │       Args:
+│   │   │           image (PIL.Image): 图像对象
+│   │   │           metadata (Dict): 元数据字典，应包含：
+│   │   │               - source_book: 来源书籍文件名
+│   │   │               - source_page: 原始页码
+│   │   │               - quality_score: 图像质量评分 (0-1)
+│   │   │               - content_hash: 图像哈希值
+│   │   │               - image_format: 图像格式 (PNG/JPEG等)
+│   │   │               - resolution: 图像分辨率
+│   │   │               - file_path: 原始文件路径
+│   │   │               - extraction_date: 提取时间戳
+│   │   │       
+│   │   │       Returns:
+│   │   │           str: 内容ID
+│   │   │       
+│   │   │       Raises:
+│   │   │           ValueError: 元数据缺少必需字段
+│   │   │           StorageError: 存储操作失败
+│   │   │       """
+│   │   │   
+│   │   │   def get_content(content_id: str) -> Dict:
+│   │   │       """
+│   │   │       获取内容
+│   │   │       
+│   │   │       Args:
+│   │   │           content_id (str): 内容ID
+│   │   │       
+│   │   │       Returns:
+│   │   │           Dict: 内容数据
+│   │   │       """
+│   │   │   
+│   │   ├── vector_storage.py
+│   │   │   """
+│   │   │   向量存储模块
+│   │   │   管理Milvus向量索引
+│   │   │   """
+│   │   │   
+│   │   │   def store_vectors(vectors: List[List[float]], metadata: List[Dict]) -> None:
+│   │   │       """
+│   │   │       存储向量到Milvus
+│   │   │       
+│   │   │       Args:
+│   │   │           vectors (List[List[float]]): 向量列表
+│   │   │           metadata (List[Dict]): 元数据列表，每个字典应包含：
+│   │   │               - summary: 内容摘要
+│   │   │               - content_link: 内容链接
+│   │   │               - content_type: 内容类型
+│   │   │               - source_file: 源文件
+│   │   │               - source_book: 来源书籍
+│   │   │               - source_page: 原始页码
+│   │   │               - quality_score: 质量评分
+│   │   │               - extraction_date: 提取时间
+│   │   │       """
+│   │   │   
+│   │   │   def search_vectors(query_vector: List[float], top_k: int = 5) -> List[Dict]:
+│   │   │       """
+│   │   │       搜索向量
+│   │   │       
+│   │   │       Args:
+│   │   │           query_vector (List[float]): 查询向量
+│   │   │           top_k (int): 返回结果数
+│   │   │       
+│   │   │       Returns:
+│   │   │           List[Dict]: 搜索结果
+│   │   │       """
+│   │   │   
+│   │   └── link_generator.py
+│   │       """
+│   │       内容链接生成器
+│   │       生成永久内容链接
+│   │       """
+│   │       
+│   │       def generate_content_link(content_type: str, content_id: str) -> str:
+│   │           """
+│   │           生成内容链接
+│   │           
+│   │           Args:
+│   │               content_type (str): 内容类型
+│   │               content_id (str): 内容ID
+│   │           
+│   │           Returns:
+│   │               str: 内容链接 (e.g., "text://file123_chunk456")
+│   │           """
+│   │       
+│   │       def parse_content_link(link: str) -> Dict[str, str]:
+│   │           """
+│   │           解析内容链接
+│   │           
+│   │           Args:
+│   │               link (str): 内容链接
+│   │           
+│   │           Returns:
+│   │               Dict[str, str]: 解析结果
+│   │                   {
+│   │                       "type": str,
+│   │                       "id": str
+│   │                   }
+│   │           """
+│   │   
+│   ├── retrieval/
+│   │   ├── __init__.py
+│   │   ├── search_engine.py
+│   │   │   """
+│   │   │   检索引擎
+│   │   │   执行查询和内容检索
+│   │   │   """
+│   │   │   
+│   │   │   def search(query: str, top_k: int = 5) -> List[Dict]:
+│   │   │       """
+│   │   │       执行搜索查询
+│   │   │       
+│   │   │       Args:
+│   │   │           query (str): 用户查询
+│   │   │           top_k (int): 返回结果数量
+│   │   │       
+│   │   │       Returns:
+│   │   │           List[Dict]: 检索结果
+│   │   │               [
+│   │   │                   {
+│   │   │                       "summary": str,
+│   │   │                       "content_link": str,
+│   │   │                       "similarity": float,
+│   │   │                       "metadata": {
+│   │   │                           "summary": str,      # 摘要
+│   │   │                           "content_link": str, # 内容链接
+│   │   │                           "content_type": str,  # 内容类型
+│   │   │                           "source_book": str,   # 来源书籍
+│   │   │                           "source_page": int,   # 原始页码
+│   │   │                           "quality_score": float, # 质量评分
+│   │   │                           "similarity": float   # 相似度得分
+│   │   │                       }
+│   │   │                   }
+│   │   │               ]
+│   │   │       """
+│   │   │   
+│   │   │   def preprocess_query(query: str) -> str:
+│   │   │       """
+│   │   │       预处理查询
+│   │   │       
+│   │   │       Args:
+│   │   │           query (str): 用户查询
+│   │   │       
+│   │   │       Returns:
+│   │   │           str: 预处理后的查询
+│   │   │       """
+│   │   │   
+│   │   └── content_fetcher.py
+│   │       """
+│   │       内容获取器
+│   │       获取完整内容并处理失败情况
+│   │       """
+│   │       
+│   │       def fetch_content(content_link: str, max_retries: int = 3) -> Dict:
+│   │           """
+│   │           获取内容
+│   │           
+│   │           Args:
+│   │               content_link (str): 内容链接
+│   │               max_retries (int): 最大重试次数
+│   │           
+│   │           Returns:
+│   │               Dict: 内容数据
+│   │           
+│   │           Raises:
+│   │               ContentFetchError: 内容获取失败
+│   │           """
+│   │       
+│   │       def get_fallback_content(content_link: str) -> Dict:
+│   │           """
+│   │           获取备用内容
+│   │           
+│   │           Args:
+│   │               content_link (str): 内容链接
+│   │           
+│   │           Returns:
+│   │               Dict: 备用内容
+│   │           """
+│   │   
+│   ├── agent/
+│   │   ├── __init__.py
+│   │   ├── reasoning_engine.py
+│   │   │   """
+│   │   │   推理引擎
+│   │   │   执行多步迭代推理
+│   │   │   """
+│   │   │   
+│   │   │   def generate_answer(query: str, max_iterations: int = 5) -> Dict:
+│   │   │       """
+│   │   │       生成最终答案
+│   │   │       
+│   │   │       Args:
+│   │   │           query (str): 用户查询
+│   │   │           max_iterations (int): 最大迭代次数
+│   │   │       
+│   │   │       Returns:
+│   │   │           Dict: 推理结果
+│   │   │               {
+│   │   │                   "final_answer": str,
+│   │   │                   "iterations": int,
+│   │   │                   "intermediate_questions": List[str],
+│   │   │                   "sources": List[str]
+│   │   │               }
+│   │   │       """
+│   │   │   
+│   │   │   def generate_intermediate_question(context: str, current_question: str) -> str:
+│   │   │       """
+│   │   │       生成中间问题
+│   │   │       
+│   │   │       Args:
+│   │   │           context (str): 上下文
+│   │   │           current_question (str): 当前问题
+│   │   │       
+│   │   │       Returns:
+│   │   │           str: 生成的中间问题
+│   │   │       """
+│   │   │   
+│   │   │   def check_termination_condition(answers: List[str], current_iteration: int) -> bool:
+│   │   │       """
+│   │   │       检查是否满足终止条件
+│   │   │       
+│   │   │       Args:
+│   │   │           answers (List[str]): 答案列表
+│   │   │           current_iteration (int): 当前迭代次数
+│   │   │       
+│   │   │       Returns:
+│   │   │           bool: 是否终止
+│   │   │       """
+│   │   │   
+│   │   ├── iteration_controller.py
+│   │   │   """
+│   │   │   迭代控制器
+│   │   │   管理迭代流程和终止条件
+│   │   │   """
+│   │   │   
+│   │   │   def run_iteration_chain(query: str, max_iterations: int = 5) -> Dict:
+│   │   │       """
+│   │   │       运行迭代链
+│   │   │       
+│   │   │       Args:
+│   │   │           query (str): 用户查询
+│   │   │           max_iterations (int): 最大迭代次数
+│   │   │       
+│   │   │       Returns:
+│   │   │           Dict: 迭代结果
+│   │   │       """
+│   │   │   
+│   │   ├── answer_generator.py
+│   │   │   """
+│   │   │   答案生成器
+│   │   │   生成最终答案
+│   │   │   """
+│   │   │   
+│   │   │   def generate_final_answer(context: str, question: str) -> str:
+│   │   │       """
+│   │   │       生成最终答案
+│   │   │       
+│   │   │       Args:
+│   │   │           context (str): 上下文
+│   │   │           question (str): 问题
+│   │   │       
+│   │   │       Returns:
+│   │   │           str: 最终答案
+│   │   │       """
+│   │   │   
+│   │   │   def format_answer_with_sources(answer: str, source_metadatas: List[Dict]) -> str:
+│   │   │       """
+│   │   │       格式化答案并添加来源引用
+│   │   │       
+│   │   │       Args:
+│   │   │           answer (str): 答案文本
+│   │   │           source_metadatas (List[Dict]): 来源元数据列表，每个字典包含：
+│   │   │               - source_book: 来源书籍
+│   │   │               - source_page: 页码
+│   │   │               - book_author: 作者（可选）
+│   │   │               - publish_year: 出版年份（可选）
+│   │   │               - quality_score: 质量评分
+│   │   │       
+│   │   │       Returns:
+│   │   │           str: 格式化后的答案，包含来源引用
+│   │   │       """
+│   │   │   
+│   │   └── __init__.py
+│   │   
+│   └── __init__.py
+│   
+├── data/
+│   ├── raw_pdfs/                # 原始PDF文件
+│   ├── extracted_content/       # 提取内容
+│   │   ├── text/                # 文本内容
+│   │   ├── images/              # 图像内容
+│   │   └── tables/              # 表格内容
+│   └── processed/               # 处理后数据
+│
+├── scripts/
+│   ├── setup_milvus.py          # Milvus初始化脚本
+│   ├── batch_processor.py       # 批量处理脚本
+│   └── data_validator.py        # 数据验证脚本
+│
+├── tests/
+│   ├── test_document_parser.py
+│   ├── test_content_extractor.py
+│   ├── test_summarizer.py
+│   ├── test_retrieval.py
+│   ├── test_agent.py
+│   └── test_storage.py
+│
+├── requirements.txt             # 依赖列表
+├── setup.py                     # 安装脚本
+├── main.py                      # 主程序入口
+├── README.md                    # 项目说明
+├── .gitignore                   # 忽略文件
+└── docker-compose.yml           # Docker配置
+
