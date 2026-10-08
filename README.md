@@ -1,4 +1,6 @@
-# Agentic RAG Framework
+# Quaestor
+
+**Agentic RAG over PDF documents.**
 
 A Python framework for question answering over PDF documents, built on
 retrieval-augmented generation with multi-step iterative reasoning. It handles
@@ -89,6 +91,9 @@ Additional providers can be added under `api_config`; each entry takes an
 
 ## Usage
 
+Commands can be run from the project root as `python main.py <command>`, or after
+`pip install -e .` as `quaestor <command>`.
+
 ### 1. Process a PDF
 
 ```bash
@@ -122,7 +127,7 @@ python scripts/data_validator.py --output validation_report.txt
 ## Project Structure
 
 ```
-myrag/
+quaestor/
 ├── config/
 │   ├── settings.py               # Configuration loader
 │   ├── settings.json.template    # Configuration template (copy to settings.json)

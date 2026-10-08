@@ -205,7 +205,7 @@ Agent框架：支持迭代推理的框架
 
 
 项目结构：
-myrag
+quaestor
 ├── config/
 │   ├── __init__.py
 │   ├── settings.py

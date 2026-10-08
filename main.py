@@ -224,7 +224,10 @@ def main() -> None:
     - query: 查询问答
     - batch_process: 批量处理
     """
-    parser = argparse.ArgumentParser(description="智能Agentic RAG框架")
+    parser = argparse.ArgumentParser(
+        prog="quaestor",
+        description="Quaestor - 智能 Agentic RAG 框架：PDF 文档多步迭代问答",
+    )
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
     
     # 处理PDF命令

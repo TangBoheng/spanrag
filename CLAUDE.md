@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-这是一个基于Python构建的智能Agentic RAG（检索增强生成）框架，专门用于处理PDF文档并执行多步迭代推理。该系统特别擅长处理扫描版和文字版PDF，使用OCR技术、自动段落合并和向量索引进行智能问答。
+Quaestor 是一个基于Python构建的智能Agentic RAG（检索增强生成）框架，专门用于处理PDF文档并执行多步迭代推理。该系统特别擅长处理扫描版和文字版PDF，使用OCR技术、自动段落合并和向量索引进行智能问答。
 
 ## 核心命令
 

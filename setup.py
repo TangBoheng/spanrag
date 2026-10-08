@@ -10,14 +10,14 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
     requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
 setup(
-    name="myrag",
+    name="quaestor",
     version="0.1.0",
-    author="Your Name",
-    author_email="your.email@example.com",
-    description="智能Agentic RAG框架",
+    author="TangBoheng",
+    author_email="tangtangllll@163.com",
+    description="Quaestor - Agentic RAG over PDF documents",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/myrag",
+    url="https://github.com/TangBoheng/quaestor",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -34,7 +34,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "myrag=main:main",
+            "quaestor=main:main",
         ],
     },
     include_package_data=True,
