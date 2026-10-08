@@ -1,4 +1,4 @@
-# Quaestor
+# SpanRAG
 
 **Agentic RAG over PDF documents.**
 
@@ -92,7 +92,7 @@ Additional providers can be added under `api_config`; each entry takes an
 ## Usage
 
 Commands can be run from the project root as `python main.py <command>`, or after
-`pip install -e .` as `quaestor <command>`.
+`pip install -e .` as `spanrag <command>`.
 
 ### 1. Process a PDF
 
@@ -127,7 +127,7 @@ python scripts/data_validator.py --output validation_report.txt
 ## Project Structure
 
 ```
-quaestor/
+spanrag/
 ├── config/
 │   ├── settings.py               # Configuration loader
 │   ├── settings.json.template    # Configuration template (copy to settings.json)

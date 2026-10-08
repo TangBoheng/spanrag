@@ -225,8 +225,8 @@ def main() -> None:
     - batch_process: 批量处理
     """
     parser = argparse.ArgumentParser(
-        prog="quaestor",
-        description="Quaestor - 智能 Agentic RAG 框架：PDF 文档多步迭代问答",
+        prog="spanrag",
+        description="SpanRAG - 智能 Agentic RAG 框架：PDF 文档多步迭代问答",
     )
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
     

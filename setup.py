@@ -10,14 +10,14 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
     requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
 setup(
-    name="quaestor",
+    name="spanrag",
     version="0.1.0",
     author="TangBoheng",
     author_email="tangtangllll@163.com",
-    description="Quaestor - Agentic RAG over PDF documents",
+    description="SpanRAG - Agentic RAG over PDF documents",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/TangBoheng/quaestor",
+    url="https://github.com/TangBoheng/spanrag",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -34,7 +34,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "quaestor=main:main",
+            "spanrag=main:main",
         ],
     },
     include_package_data=True,
