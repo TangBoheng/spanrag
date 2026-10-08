@@ -1,106 +1,74 @@
+# Agentic RAG Framework
 
-# 智能Agentic RAG框架
+A Python framework for question answering over PDF documents, built on
+retrieval-augmented generation with multi-step iterative reasoning. It handles
+both scanned and text-based PDFs: content is extracted via OCR, paragraphs split
+across page boundaries are automatically merged, summaries and a vector index are
+built, and complex questions are answered through an iterative reasoning loop.
 
-## 项目简介
+## Features
 
-智能Agentic RAG框架是一个基于检索增强生成（Retrieval-Augmented Generation）技术的智能问答系统。该框架能够处理PDF格式的电子书（包括扫描版和文字版），通过OCR技术提取内容，自动合并跨页段落，生成内容摘要和索引，并支持多步迭代推理来回答复杂问题。
+1. **PDF processing** — handles both scanned and text-based PDF files
+2. **OCR** — integrates multiple OCR engines (PaddleOCR, Tesseract, EasyOCR) with automatic fallback
+3. **Paragraph merging** — detects and merges paragraphs that span page boundaries
+4. **Summarization** — generates text and multimodal summaries using LLM APIs
+5. **Vector indexing** — builds an efficient retrieval index on top of Milvus
+6. **Iterative reasoning** — multi-step reasoning loop that continues until the answer is complete
+7. **Multimodal support** — handles text, images, and tables as distinct content types
+8. **Batch processing** — concurrent, multi-threaded processing of large PDF collections
+9. **Data validation** — tooling to check data quality and consistency
 
-## 核心功能
-
-1. **PDF处理**：支持扫描版和文字版PDF文件处理
-2. **OCR识别**：集成多种OCR引擎（PaddleOCR、Tesseract、EasyOCR）
-3. **段落合并**：自动检测并合并跨页段落
-4. **内容摘要**：使用大语言模型生成文本和多模态内容摘要
-5. **向量索引**：基于Milvus构建高效的向量检索系统
-6. **智能推理**：支持多步迭代推理直到形成完整答案
-7. **多模态支持**：处理文本、图像、表格等多种内容类型
-8. **批量处理**：支持多线程并发处理大量PDF文件
-9. **数据验证**：提供完整的数据质量检查和验证工具
-
-## 技术架构
+## Architecture
 
 ```
-[PDF输入] → [OCR解析器] → [段落合并器] → [内容截取器] → [内容存储]
+[PDF input] → [OCR parser] → [Paragraph merger] → [Content extractor] → [Content storage]
 ↓
-[OpenAI API摘要器] → [摘要+链接生成] → [Milvus索引]
+[LLM summarizer] → [Summary + content links] → [Milvus index]
 ↓
-[查询处理器] → [摘要检索] → [内容获取] → [多步迭代推理] → [最终答案]
+[Query processor] → [Summary retrieval] → [Content fetch] → [Multi-step reasoning] → [Final answer]
 ```
 
-## 安装依赖
+## Requirements
+
+- Python 3.8+
+- An OpenAI-compatible API endpoint (the project is configured for Alibaba Cloud
+  DashScope / Qwen out of the box; OpenAI, Anthropic, and custom endpoints are
+  also supported)
+- OCR engines are optional — the framework degrades gracefully when they are
+  unavailable
+
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 使用方法
+## Configuration
 
-### 1. 处理PDF文件
-
-```bash
-python main.py process_pdf /path/to/your/document.pdf
-```
-
-### 2. 查询问答
+Copy the template and fill in your own API key:
 
 ```bash
-python main.py query "你的问题"
+cp config/settings.json.template config/settings.json
 ```
 
-### 3. 批量处理
-
-```bash
-python main.py batch_process /path/to/pdf/directory
-```
-
-### 4. 高级批量处理（支持并发）
-
-```bash
-python scripts/batch_processor.py /path/to/pdf/directory --max-workers 8
-```
-
-### 5. 数据验证
-
-```bash
-python scripts/data_validator.py --output validation_report.txt
-```
-
-## 系统配置
-
-在项目根目录创建`config/settings.json`文件：
+`config/settings.json` is gitignored, so your credentials stay local.
 
 ```json
 {
     "api_config": {
-        "openai": {
-            "api_key": "",
-            "base_url": "https://api.openai.com/v1"
-        },
         "qwen": {
-            "api_key": "",
-            "base_url": "https://dashscope.aliyuncs.com/api/v1"
-        },
-        "anthropic": {
-            "api_key": "",
-            "base_url": "https://api.anthropic.com/v1"
-        },
-        "custom": {
-            "api_key": "",
-            "base_url": ""
+            "api_key": "YOUR_DASHSCOPE_API_KEY",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
         }
     },
     "milvus_config": {
-        "host": "localhost",
-        "port": 19530,
         "collection_name": "rag_documents",
-        "user": "",
-        "password": "",
-        "secure": false
+        "uri": "data/milvus_lite.db"
     },
     "model_config": {
-        "text_model": "gpt-4",
-        "vision_model": "gpt-4-vision",
-        "embedding_model": "text-embedding-ada-002",
+        "text_model": "qwen-flash",
+        "vision_model": "qwen3-vl-flash",
+        "embedding_model": "text-embedding-v4",
         "temperature": 0.7,
         "max_tokens": 2000
     },
@@ -113,71 +81,86 @@ python scripts/data_validator.py --output validation_report.txt
 }
 ```
 
-## 项目结构
+Keys can also be supplied through the environment (`OPENAI_API_KEY`,
+`QWEN_API_KEY`, `ANTHROPIC_API_KEY`) — see `config/settings.py`.
+
+Additional providers can be added under `api_config`; each entry takes an
+`api_key` and a `base_url`, so any OpenAI-compatible endpoint works.
+
+## Usage
+
+### 1. Process a PDF
+
+```bash
+python main.py process_pdf /path/to/your/document.pdf
+```
+
+### 2. Ask a question
+
+```bash
+python main.py query "your question"
+```
+
+### 3. Batch process a directory
+
+```bash
+python main.py batch_process /path/to/pdf/directory
+```
+
+### 4. Concurrent batch processing
+
+```bash
+python scripts/batch_processor.py /path/to/pdf/directory --max-workers 8
+```
+
+### 5. Validate processed data
+
+```bash
+python scripts/data_validator.py --output validation_report.txt
+```
+
+## Project Structure
 
 ```
 myrag/
 ├── config/
-│   ├── settings.py          # 项目配置文件
-│   ├── api_config.py        # API配置
-│   └── milvus_config.py     # Milvus配置
+│   ├── settings.py               # Configuration loader
+│   ├── settings.json.template    # Configuration template (copy to settings.json)
+│   ├── api_config.py             # API provider configuration
+│   └── milvus_config.py          # Milvus configuration
 ├── src/
-│   ├── core/                # 核心处理模块
-│   ├── storage/             # 存储模块
-│   ├── retrieval/           # 检索模块
-│   ├── agent/               # 智能代理模块
-│   ├── models/              # 模型接口
-│   └── utils/               # 工具函数
-├── data/
-│   ├── raw_pdfs/           # 原始PDF文件
-│   ├── extracted_content/  # 提取内容
-│   └── processed/          # 处理后数据
-├── tests/                  # 测试文件
-│   ├── test_document_parser.py
-│   ├── test_content_extractor.py
-│   ├── test_summarizer.py
-│   ├── test_retrieval.py
-│   ├── test_agent.py
-│   └── test_storage.py
-├── scripts/                # 脚本文件
-│   ├── batch_processor.py   # 批量处理脚本
-│   └── data_validator.py    # 数据验证脚本
-├── requirements.txt        # 依赖列表
-├── setup.py                # 安装脚本
-├── main.py                 # 主程序入口
-└── README.md               # 项目说明
+│   ├── core/                     # Core pipeline: parsing, extraction, merging, summarization
+│   ├── storage/                  # Content and vector storage
+│   ├── retrieval/                # Vector search and content fetching
+│   ├── agent/                    # Reasoning engine and iteration control
+│   ├── models/                   # Model interfaces (text, vision, embedding)
+│   └── utils/                    # Logging, file and filtering helpers
+├── data/                         # Generated at runtime (gitignored)
+│   ├── raw_pdfs/                 # Source PDF files
+│   ├── extracted_content/        # Extracted images, text, tables
+│   └── processed/                # Processed output
+├── tests/                        # Test suite
+├── scripts/                      # Batch processing and validation scripts
+├── requirements.txt              # Dependencies
+├── setup.py                      # Install script
+├── main.py                       # CLI entry point
+└── README.md
 ```
 
-## 开发指南
+## Development
 
-### 代码规范
+### Style
 
-- 遵循PEP 8代码规范
-- 使用类型注解
-- 编写单元测试
+- Follow PEP 8
+- Use type annotations
+- Add unit tests for new modules
 
-### 测试
+### Testing
 
 ```bash
+# Run the full suite
 pytest tests/
-```
 
-### 运行特定测试
-
-```bash
-# 运行文档解析器测试
+# Run a single module verbosely
 python -m pytest tests/test_document_parser.py -v
-
-# 运行所有测试
-python -m pytest tests/ -v
 ```
-
-
-
-主要更新内容：
-1. 更新了配置文件结构，使用新的`api_config`格式
-2. 添加了批量处理和数据验证的使用说明
-3. 更新了项目结构，包含新增的脚本和测试文件
-4. 添加了测试运行说明
-5. 补充了新的核心功能描述（批量处理、数据验证）
-6. 更新了API配置示例，支持自定义base_url
